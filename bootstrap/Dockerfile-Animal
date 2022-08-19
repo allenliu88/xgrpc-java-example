@@ -1,0 +1,4 @@
+FROM registry.cn-hangzhou.aliyuncs.com/choerodon-tools/javabase:0.8.0
+COPY animal-name-service-0.0.1-SNAPSHOT.jar /app.jar
+
+CMD java $JAVA_OPTS -jar /app.jar
