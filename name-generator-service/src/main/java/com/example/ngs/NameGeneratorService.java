@@ -2,11 +2,8 @@ package com.example.ngs;
 
 import com.example.dto.DemoRequest;
 import com.example.dto.DemoResponse;
-import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
-import io.grpc.stub.StreamObserver;
-import io.xgrpc.api.grpc.auto.Payload;
-import io.xgrpc.api.grpc.auto.RequestGrpc;
+import com.example.dto.DemoServerRequest;
+import com.example.dto.DemoServerResponse;
 import io.xgrpc.api.remote.request.Request;
 import io.xgrpc.api.remote.request.RequestMeta;
 import io.xgrpc.api.remote.response.Response;
@@ -14,9 +11,7 @@ import io.xgrpc.client.transport.DefaultRpcClientManager;
 import io.xgrpc.client.transport.RpcClientManager;
 import io.xgrpc.client.transport.ServerListManager;
 import io.xgrpc.common.remote.ConnectionType;
-import io.xgrpc.common.remote.client.RpcClient;
 import io.xgrpc.common.remote.client.ServerRequestHandler;
-import io.xgrpc.common.remote.client.grpc.GrpcUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -81,13 +76,31 @@ class NameResource {
         System.out.println("HttpHeaders: " + headers);
         System.out.println("===========================================");
 
-        executeDemoRequest0();
+        executeRequestAndHandleServerRequest();
         return name;
     }
 
-    private void executeDemoRequest0() {
+    /**
+     * 客户端请求服务器端：
+     * 1. 初始建立连接，生成RPC客户端
+     * 2. 注册服务器端请求处理器
+     * 3. 发送请求
+     */
+    private void executeRequestAndHandleServerRequest() {
         RpcClientManager rpcClientManager =
-                new DefaultRpcClientManager(ConnectionType.GRPC, new ServerListManager(Arrays.asList("127.0.0.1:8848")));
+                new DefaultRpcClientManager(ConnectionType.GRPC, new ServerListManager(Arrays.asList("127.0.0.1:8848")))
+                        .addLabel("uuidName", "NameGeneratorService")
+                        .addServerRequestHandler(new ServerRequestHandler() {
+                            @Override
+                            public Response requestReply(Request request) {
+                                System.out.println("=======request class is " + request.getClass().getName());
+                                if (request instanceof DemoServerRequest) {
+                                    DemoServerRequest demoServerRequest = (DemoServerRequest) request;
+                                    System.out.println("======server is " + demoServerRequest.getName());
+                                }
+                                return new DemoServerResponse().setMsg("hello, i'm client NameGeneratorService.");
+                            }
+                        });
 
         String connectId = UUID.randomUUID().toString();
         String requestId = UUID.randomUUID().toString();
@@ -101,43 +114,5 @@ class NameResource {
 
         System.out.println("response type: " + (demoResponse instanceof  DemoResponse));
         System.out.println(((DemoResponse)demoResponse).getMsg());
-    }
-
-    private void executeDemoRequest() {
-        ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 9848).usePlaintext().build();
-        RequestGrpc.RequestStub streamStub = RequestGrpc.newStub(channel);
-
-        String connectId = UUID.randomUUID().toString();
-        String requestId = UUID.randomUUID().toString();
-        RequestMeta metadata = new RequestMeta();
-        metadata.setClientIp("127.0.0.1");
-        metadata.setConnectionId(connectId);
-
-        DemoRequest demoRequest = new DemoRequest();
-        demoRequest.setRequestId(requestId);
-        Payload request = GrpcUtils.convert(demoRequest, metadata);
-
-        StreamObserver<Payload> streamObserver = new StreamObserver<Payload>() {
-            @Override
-            public void onNext(Payload payload) {
-                System.out.println("Receive data from server: " + payload);
-                Object res = GrpcUtils.parse(payload);
-                System.out.println("response class assert: " + (res instanceof DemoResponse));
-                DemoResponse demoResponse = (DemoResponse) res;
-                System.out.println("response msg: " + demoResponse.getMsg());
-            }
-
-            @Override
-            public void onError(Throwable throwable) {
-                System.out.println(throwable.getMessage());
-            }
-
-            @Override
-            public void onCompleted() {
-                System.out.println("complete");
-            }
-        };
-
-        streamStub.request(request, streamObserver);
     }
 }
